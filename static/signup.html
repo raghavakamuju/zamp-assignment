@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign up -- Outreach Pipeline</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body class="auth-body">
+  <div class="auth-card">
+    <div class="brand brand-centered">
+      <span class="brand-mark" aria-hidden="true"></span>
+    </div>
+    <h1 class="auth-title">Create an account</h1>
+    <form id="signup-form">
+      <input type="email" id="email" placeholder="Email" autocomplete="email" required />
+      <input type="password" id="password" placeholder="Password (min. 8 characters)" autocomplete="new-password" minlength="8" required />
+      <button type="submit" class="btn-primary btn-block">Sign up</button>
+    </form>
+    <p class="auth-error" id="error"></p>
+    <p class="auth-switch">Already have an account? <a href="/login">Log in</a></p>
+  </div>
+  <script src="/static/auth.js"></script>
+</body>
+</html>

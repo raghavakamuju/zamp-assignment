@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+#/
+3.10+/
+required/
+
+# Secrets -- only .env.example should ever be committed
+.env
+
+# SQLite database (local run history/test data, not source)
+runs.db
+*.db-journal
+
+# macOS
+.DS_Store

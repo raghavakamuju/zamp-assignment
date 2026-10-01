@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PS-3 Outreach Pipeline</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <h1>Personalized Outreach Pipeline</h1>
+        <p class="subtitle">Prospect &rarr; research &rarr; judged hook &rarr; grounded draft &rarr; human review</p>
+      </div>
+    </div>
+    <button id="logout-btn" class="btn-outline">Log out</button>
+  </header>
+
+  <section id="new-run">
+    <form id="new-run-form">
+      <input type="text" id="prospect_name" placeholder="Prospect name" required />
+      <input type="text" id="company_name" placeholder="Company name" required />
+      <input type="text" id="title" placeholder="Title (optional)" />
+      <button type="submit" class="btn-primary">Run</button>
+    </form>
+  </section>
+
+  <main>
+    <aside id="runs-list">
+      <h2>History</h2>
+      <div id="runs-table"></div>
+    </aside>
+
+    <section id="run-detail">
+      <p class="empty-state">Start a new run or select one from history.</p>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

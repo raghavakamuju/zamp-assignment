@@ -1,0 +1,38 @@
+[
+  {
+    "prospect_name": "Aravind Srinivas",
+    "company_name": "Perplexity AI",
+    "title": "CEO",
+    "why": "Confirmed working happy path: hiring surge + revenue growth signal, strong confidence, grounded draft."
+  },
+  {
+    "prospect_name": "Dara Khosrowshahi",
+    "company_name": "Uber",
+    "title": "CEO",
+    "why": "Confirmed irrelevant-signal case: only autonomous-vehicle partnership news, correctly declined (confidence: low/weak)."
+  },
+  {
+    "prospect_name": "Patrick Collison",
+    "company_name": "Stripe",
+    "title": "CEO",
+    "why": "Large, frequently-covered company -- good stress test for signal volume and dedup (financing + news likely to overlap)."
+  },
+  {
+    "prospect_name": "Guillermo Rauch",
+    "company_name": "Vercel",
+    "title": "CEO",
+    "why": "Mid-size, funding-active company -- likely candidate for a genuine financing_events hit from PredictLeads directly (not just Tavily fallback)."
+  },
+  {
+    "prospect_name": "Jane Doe",
+    "company_name": "Zzyzx Widgets Cooperative",
+    "title": "VP Operations",
+    "why": "Deliberately nonexistent company -- domain resolution and both research sources should come up empty. Should reliably produce flagged_no_signal."
+  },
+  {
+    "prospect_name": "John Smith",
+    "company_name": "Whatfix",
+    "title": "FDE",
+    "why": "Already tested (weak confidence, leadership-change-only signal) -- useful as a repeatable regression check."
+  }
+]
