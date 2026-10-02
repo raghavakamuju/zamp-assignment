@@ -11,16 +11,20 @@
     <div class="brand">
       <span class="brand-mark" aria-hidden="true"></span>
       <div>
-        <h1>Personalized Outreach Pipeline</h1>
+        <h1>Personalized Outreach Dashboard</h1>
         <p class="subtitle">Prospect &rarr; research &rarr; judged hook &rarr; grounded draft &rarr; human review</p>
       </div>
     </div>
-    <button id="logout-btn" class="btn-outline">Log out</button>
+    <div class="header-actions">
+      <a href="/admin" class="btn-outline">Admin</a>
+      <button id="logout-btn" class="btn-outline">Log out</button>
+    </div>
   </header>
 
   <section id="new-run">
     <form id="new-run-form">
       <input type="text" id="prospect_name" placeholder="Prospect name" required />
+      <input type="email" id="prospect_email" placeholder="Prospect email (needed to request approval)" />
       <input type="text" id="company_name" placeholder="Company name" required />
       <input type="text" id="title" placeholder="Title (optional)" />
       <button type="submit" class="btn-primary">Run</button>

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY,
     user_id TEXT,
     prospect_name TEXT NOT NULL,
+    prospect_email TEXT,
     company_name TEXT NOT NULL,
     title TEXT,
     status TEXT NOT NULL,
@@ -27,7 +28,9 @@ CREATE TABLE IF NOT EXISTS runs (
     draft_subject TEXT,
     draft_body TEXT,
     confidence TEXT,
-    grounding_result TEXT
+    grounding_result TEXT,
+    send_error TEXT,
+    rejection_reason TEXT
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -58,23 +61,30 @@ def _conn() -> sqlite3.Connection:
 def init_db() -> None:
     with _conn() as conn:
         conn.executescript(SCHEMA)
-        # Migration for DBs created before user_id existed on runs (CREATE TABLE
-        # IF NOT EXISTS above is a no-op on an already-existing table, so this
-        # covers databases from before per-user history was added).
+        # Migrations for DBs created before these columns existed (CREATE TABLE
+        # IF NOT EXISTS above is a no-op on an already-existing table).
         cols = [row[1] for row in conn.execute("PRAGMA table_info(runs)").fetchall()]
         if "user_id" not in cols:
             conn.execute("ALTER TABLE runs ADD COLUMN user_id TEXT")
+        if "prospect_email" not in cols:
+            conn.execute("ALTER TABLE runs ADD COLUMN prospect_email TEXT")
+        if "send_error" not in cols:
+            conn.execute("ALTER TABLE runs ADD COLUMN send_error TEXT")
+        if "rejection_reason" not in cols:
+            conn.execute("ALTER TABLE runs ADD COLUMN rejection_reason TEXT")
 
 
-def create_run(user_id: str, prospect_name: str, company_name: str, title: str | None) -> str:
+def create_run(
+    user_id: str, prospect_name: str, prospect_email: str | None, company_name: str, title: str | None
+) -> str:
     run_id = str(uuid.uuid4())
     now = _now()
     with _conn() as conn:
         conn.execute(
-            """INSERT INTO runs (id, user_id, prospect_name, company_name, title, status,
-               created_at, updated_at, stages, signals)
-               VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, '[]', '[]')""",
-            (run_id, user_id, prospect_name, company_name, title, now, now),
+            """INSERT INTO runs (id, user_id, prospect_name, prospect_email, company_name, title,
+               status, created_at, updated_at, stages, signals)
+               VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, '[]', '[]')""",
+            (run_id, user_id, prospect_name, prospect_email, company_name, title, now, now),
         )
     return run_id
 
@@ -116,6 +126,28 @@ def list_runs(user_id: str) -> list[dict]:
             """SELECT id, prospect_name, company_name, status, confidence,
                created_at, updated_at FROM runs WHERE user_id = ? ORDER BY created_at DESC""",
             (user_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+ADMIN_QUEUE_STATUSES = ("pending_approval", "sent", "rejected", "send_failed")
+
+
+def list_admin_queue() -> list[dict]:
+    """Every run that has ever entered the approval flow -- pending, sent,
+    rejected, or failed to send -- across ALL users (intentionally not scoped
+    by user_id, since this is a shared review queue, not personal history).
+    Most recent first, so new requests surface at the top."""
+    placeholders = ",".join("?" for _ in ADMIN_QUEUE_STATUSES)
+    with _conn() as conn:
+        rows = conn.execute(
+            f"""SELECT runs.id, runs.prospect_name, runs.prospect_email, runs.company_name,
+               runs.title, runs.draft_subject, runs.draft_body, runs.status,
+               runs.created_at, runs.updated_at, runs.send_error, runs.rejection_reason,
+               users.email AS requested_by
+               FROM runs JOIN users ON users.id = runs.user_id
+               WHERE runs.status IN ({placeholders}) ORDER BY runs.created_at DESC""",
+            ADMIN_QUEUE_STATUSES,
         ).fetchall()
     return [dict(r) for r in rows]
 

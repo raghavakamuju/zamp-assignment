@@ -106,12 +106,39 @@ function renderSignals(run) {
 
 function renderDraft(run) {
   if (!run.draft_body) return "";
+
+  let actionBlock = "";
+  if (run.status === "ready_for_review") {
+    actionBlock = run.prospect_email
+      ? `<button class="btn-primary" id="request-approval-btn">Request approval to send</button>`
+      : `<p class="muted">No prospect email on file -- add one on a new run to request approval.</p>`;
+  } else if (run.status === "pending_approval") {
+    actionBlock = `<p class="muted">Awaiting admin approval -- visible on the <a href="/admin">admin dashboard</a>.</p>`;
+  } else if (run.status === "sent") {
+    actionBlock = `<p class="ok-text">Sent to ${escapeHtml(run.prospect_email || "")}.</p>`;
+  } else if (run.status === "send_failed") {
+    actionBlock = `<p class="bad-text">Send failed: ${escapeHtml(run.send_error || "unknown error")}</p>`;
+  }
+
   return `
     <div class="draft-box">
       <h3>Draft (pending human review -- nothing is sent automatically)</h3>
       <div class="subject">Subject: ${escapeHtml(run.draft_subject || "")}</div>
       <div>${escapeHtml(run.draft_body).replace(/\n/g, "<br/>")}</div>
+      <div style="margin-top:0.9rem">${actionBlock}</div>
     </div>`;
+}
+
+async function requestApproval(runId) {
+  const res = await fetch(`/runs/${runId}/request-approval`, { method: "POST" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    alert(body.detail || "Could not request approval.");
+    return;
+  }
+  const run = await (await fetch(`/runs/${runId}`)).json();
+  renderDetail(run);
+  loadRuns();
 }
 
 function renderDetail(run) {
@@ -156,6 +183,11 @@ function renderDetail(run) {
       el.parentElement.classList.toggle("open");
     });
   });
+
+  const approvalBtn = document.getElementById("request-approval-btn");
+  if (approvalBtn) {
+    approvalBtn.addEventListener("click", () => requestApproval(run.id));
+  }
 }
 
 function selectRun(runId) {
@@ -174,13 +206,14 @@ function selectRun(runId) {
 document.getElementById("new-run-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const prospect_name = document.getElementById("prospect_name").value.trim();
+  const prospect_email = document.getElementById("prospect_email").value.trim() || null;
   const company_name = document.getElementById("company_name").value.trim();
   const title = document.getElementById("title").value.trim() || null;
 
   const res = await fetch("/runs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prospect_name, company_name, title }),
+    body: JSON.stringify({ prospect_name, prospect_email, company_name, title }),
   });
   const { id } = await res.json();
   document.getElementById("new-run-form").reset();

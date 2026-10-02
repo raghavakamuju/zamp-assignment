@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin -- Outreach Pipeline</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <h1>Admin</h1>
+        <p class="subtitle">Select a request to preview the draft, then approve &amp; send or reject with a reason.</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <a href="/" class="btn-outline">&larr; Dashboard</a>
+    </div>
+  </header>
+
+  <section id="stats-row"></section>
+
+  <main>
+    <aside id="queue-list-wrap">
+      <h2>Requests</h2>
+      <div id="queue-list"></div>
+    </aside>
+
+    <section id="request-detail">
+      <p class="empty-state">Select a request from the list.</p>
+    </section>
+  </main>
+
+  <script src="/static/admin.js"></script>
+</body>
+</html>

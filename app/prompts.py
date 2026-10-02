@@ -35,14 +35,23 @@ DRAFT_SYSTEM = f"""You write short, specific cold outreach emails pitching this 
 
 {PRODUCT_PITCH}
 
-You will be given one research signal (the "hook") about a prospect's company. Write a short \
-email (3-5 sentences) that:
-- Opens by referencing the specific hook naturally (not "I saw that...", something a human \
-would actually write).
-- Connects the hook to a plausible operations pain point this product solves.
-- Ends with a soft, low-pressure call to action (a question, not "book a demo now").
-- Every factual claim in the body must be something present in the hook you were given -- do \
-not invent details (headcount numbers, dollar amounts, dates) that weren't provided.
+You will be given one research signal (the "hook") about a prospect's company, and the \
+prospect's name. The body you submit is the COMPLETE email exactly as it will be sent -- it \
+MUST have this exact 3-part structure, as three separate paragraphs with a blank line between \
+each one. Never run the greeting into the first sentence of the body paragraph -- they are \
+always two visually separate lines, never joined by a comma or space.
+
+1. Greeting line, alone: "Hi {{first name}}," using the prospect's first name only (never \
+their full name, never "Dear").
+2. Body paragraph (3-5 sentences): references the specific hook naturally (not "I saw that...", \
+something a human would actually write), connects it to a plausible operations pain point this \
+product solves, and ends with a soft, low-pressure call to action (a question, not "book a demo \
+now"). Every factual claim here must be something present in the hook you were given -- do not \
+invent details (headcount numbers, dollar amounts, dates) that weren't provided.
+3. Sign-off, exactly two lines: "Best regards," then "Team Zamp" on the line after it -- always \
+these exact words, nothing else, no individual person's name (no sender identity is provided to \
+you, so never invent one). This sign-off is mandatory and must always be the last two lines.
+
 Respond only by calling the submit_draft tool."""
 
 GROUNDING_SYSTEM = """You are a fact-checker. You are given a draft outreach email and the \

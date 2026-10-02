@@ -13,12 +13,20 @@ from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
 
-from app import auth, db
-from app.auth import SESSION_COOKIE, require_auth
-from app.models import AuthRequest, NewRunRequest
+from app import auth, db, email_sender
+from app.auth import SESSION_COOKIE, require_admin_dashboard, require_auth
+from app.models import AuthRequest, NewRunRequest, RejectRequest
 from app.pipeline import run_pipeline
 
-TERMINAL_STATUSES = {"ready_for_review", "flagged_no_signal", "flagged_ungrounded", "error"}
+TERMINAL_STATUSES = {
+    "ready_for_review",
+    "flagged_no_signal",
+    "flagged_ungrounded",
+    "error",
+    "pending_approval",
+    "sent",
+    "send_failed",
+}
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 app = FastAPI(title="Outreach Pipeline")
@@ -87,7 +95,7 @@ async def index(request: Request):
 
 @app.post("/runs")
 async def create_run(body: NewRunRequest, user: dict = Depends(require_auth)):
-    run_id = db.create_run(user["id"], body.prospect_name, body.company_name, body.title)
+    run_id = db.create_run(user["id"], body.prospect_name, body.prospect_email, body.company_name, body.title)
     asyncio.create_task(run_pipeline(run_id))
     return {"id": run_id}
 
@@ -103,6 +111,19 @@ async def get_run(run_id: str, user: dict = Depends(require_auth)):
     if not run:
         raise HTTPException(status_code=404, detail="run not found")
     return run
+
+
+@app.post("/runs/{run_id}/request-approval")
+async def request_approval(run_id: str, user: dict = Depends(require_auth)):
+    run = db.get_run(run_id, user["id"])
+    if not run:
+        raise HTTPException(status_code=404, detail="run not found")
+    if run["status"] != "ready_for_review":
+        raise HTTPException(status_code=409, detail=f"run is '{run['status']}', not ready_for_review")
+    if not run.get("prospect_email"):
+        raise HTTPException(status_code=400, detail="this run has no prospect email on file -- can't request approval to send")
+    db.set_status(run_id, "pending_approval")
+    return {"ok": True}
 
 
 @app.get("/runs/{run_id}/stream")
@@ -123,6 +144,60 @@ async def stream_run(run_id: str, user: dict = Depends(require_auth)):
             await asyncio.sleep(0.5)
 
     return StreamingResponse(event_source(), media_type="text/event-stream")
+
+
+# --- admin: review + send approved drafts -----------------------------------
+# Access controlled by ADMIN_DASHBOARD_ACCESS env var: 'everyone' (default) or
+# 'admin_only' (gated by the ADMIN_EMAILS allowlist). See app/auth.py.
+
+
+@app.get("/admin")
+async def admin_page(request: Request):
+    token = request.cookies.get(SESSION_COOKIE)
+    user = db.get_user_by_session(token) if token else None
+    if not user:
+        return RedirectResponse(url="/login")
+    if auth.admin_dashboard_restricted() and user["email"].lower() not in auth.admin_emails():
+        raise HTTPException(status_code=403, detail="admin access required")
+    return FileResponse(STATIC_DIR / "admin.html")
+
+
+@app.get("/admin/queue")
+async def admin_queue(user: dict = Depends(require_admin_dashboard)):
+    return db.list_admin_queue()
+
+
+@app.post("/admin/runs/{run_id}/approve")
+async def admin_approve_and_send(run_id: str, user: dict = Depends(require_admin_dashboard)):
+    run = db.get_run_unscoped(run_id)  # any user reviewing the shared approval queue, not just the requester
+    if not run:
+        raise HTTPException(status_code=404, detail="run not found")
+    if run["status"] != "pending_approval":
+        raise HTTPException(status_code=409, detail=f"run is '{run['status']}', not pending_approval")
+    try:
+        await asyncio.to_thread(
+            email_sender.send_email, run["prospect_email"], run["draft_subject"], run["draft_body"]
+        )
+    except Exception as e:
+        db.update_fields(run_id, send_error=str(e))
+        db.set_status(run_id, "send_failed")
+        raise HTTPException(status_code=502, detail=f"send failed: {e}")
+    db.set_status(run_id, "sent")
+    return {"ok": True}
+
+
+@app.post("/admin/runs/{run_id}/reject")
+async def admin_reject(run_id: str, body: RejectRequest, user: dict = Depends(require_admin_dashboard)):
+    run = db.get_run_unscoped(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="run not found")
+    if run["status"] != "pending_approval":
+        raise HTTPException(status_code=409, detail=f"run is '{run['status']}', not pending_approval")
+    if not body.reason.strip():
+        raise HTTPException(status_code=400, detail="a rejection reason is required")
+    db.update_fields(run_id, rejection_reason=body.reason.strip())
+    db.set_status(run_id, "rejected")
+    return {"ok": True}
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

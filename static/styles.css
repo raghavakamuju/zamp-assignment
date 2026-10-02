@@ -109,7 +109,8 @@ main {
   align-items: start;
 }
 
-#runs-list h2, #run-detail h2 { font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--font-mono); font-weight: 600; }
+#runs-list h2, #run-detail h2, #queue-list-wrap h2, #request-detail h2 { font-size: 0.85rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--font-mono); font-weight: 600; }
+#request-detail h2 { font-size: 1.1rem; text-transform: none; letter-spacing: -0.01em; color: var(--text); }
 
 .run-row {
   padding: 0.7rem 0.9rem;
@@ -135,14 +136,74 @@ main {
   margin-top: 0.3rem;
   font-family: var(--font-mono);
 }
-.badge.ready_for_review { background: var(--green-bg); color: var(--green); }
-.badge.flagged_no_signal, .badge.flagged_ungrounded { background: var(--yellow-bg); color: var(--yellow); }
-.badge.error { background: var(--red-bg); color: var(--red); }
+.badge.ready_for_review, .badge.sent { background: var(--green-bg); color: var(--green); }
+.badge.flagged_no_signal, .badge.flagged_ungrounded, .badge.pending_approval, .badge.rejected { background: var(--yellow-bg); color: var(--yellow); }
+.badge.error, .badge.send_failed { background: var(--red-bg); color: var(--red); }
 .badge.pending, .badge.researching, .badge.judging, .badge.drafting, .badge.checking {
   background: var(--accent-bg); color: var(--text);
 }
 
-#run-detail {
+.header-actions { display: flex; gap: 0.6rem; align-items: center; }
+.header-actions a.btn-outline { text-decoration: none; display: inline-flex; align-items: center; }
+
+.muted { color: var(--muted); font-size: 0.85rem; }
+.ok-text { color: var(--green); font-size: 0.85rem; font-weight: 600; }
+.bad-text { color: var(--red); font-size: 0.85rem; font-weight: 600; }
+
+/* --- admin dashboard --- */
+#stats-row {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0 2rem 1rem;
+  flex-wrap: wrap;
+}
+.stat-card {
+  flex: 1;
+  min-width: 130px;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 0.9rem 1.1rem;
+}
+.stat-card .stat-number {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 1.8rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.stat-card .stat-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-top: 0.2rem;
+}
+.stat-card.total .stat-number { color: var(--text); }
+.stat-card.pending .stat-number { color: var(--yellow); }
+.stat-card.sent .stat-number { color: var(--green); }
+.stat-card.rejected .stat-number { color: var(--red); }
+.stat-card.failed .stat-number { color: var(--red); }
+
+#request-detail .meta { color: var(--muted); font-size: 0.8rem; margin: 0.2rem 0 0.6rem; }
+
+.admin-actions { display: flex; flex-direction: column; gap: 0.6rem; align-items: flex-start; }
+.reject-block { display: flex; gap: 0.5rem; align-items: flex-start; width: 100%; }
+.reject-block textarea {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.6rem 0.8rem;
+  background: var(--panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  resize: vertical;
+}
+.reject-block textarea::placeholder { color: var(--muted); }
+
+#run-detail, #request-detail {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 16px;
