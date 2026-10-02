@@ -9,10 +9,13 @@ see [README.md](README.md). This document is about *how the code works*.
 
 ```
 app/
-  main.py              FastAPI app: routes, auth endpoints, SSE streaming
-  auth.py              Password hashing + session cookie helpers
+  main.py              FastAPI app: routes, auth endpoints, admin/approval
+                        endpoints, SSE streaming
+  auth.py              Password hashing, session cookies, admin-access check
   db.py                SQLite persistence (runs, users, sessions tables)
   models.py            Pydantic request schemas
+  email_sender.py      Sends the approved draft via Gmail SMTP (the one
+                        place in the whole system that actually sends)
   pipeline.py           The 8-stage pipeline orchestration + signal logic
   prompts.py           System prompts for the 3 Gemini calls
   clients/
@@ -22,6 +25,8 @@ app/
 static/
   index.html, app.js, styles.css   Main dashboard + live run view
   login.html, signup.html, auth.js  Auth pages
+  admin.html, admin.js             Shared approval queue: stats, list,
+                                    preview pane with approve/reject
 runs.db                SQLite database file (created on first run)
 scripts/
   test_edge_cases.py       Deterministic tests with crafted signals
@@ -48,23 +53,34 @@ scripts/
    `db.start_stage()` / `db.finish_stage()` / `db.update_fields()`.
 6. **The SSE endpoint (`stream_run()` in `main.py`) polls the DB every
    500ms** and pushes a new `data: {...}` event to the browser whenever the
-   row's JSON representation changes. It stops once `status` reaches a
-   terminal value (`ready_for_review`, `flagged_no_signal`,
-   `flagged_ungrounded`, or `error`).
+   row's JSON representation changes. It stops once `status` reaches any
+   value in `TERMINAL_STATUSES` — the 4 pipeline outcomes
+   (`ready_for_review`, `flagged_no_signal`, `flagged_ungrounded`, `error`)
+   **plus** the 3 post-approval outcomes (`pending_approval`, `sent`,
+   `send_failed`) — so the live connection doesn't hang open waiting for
+   something the pipeline itself will never produce again.
 7. **`app.js`'s `onmessage` handler calls `renderDetail(run)`** every time a
    new event arrives, fully re-drawing the stage checklist, the retrieved
-   signals, and (once available) the draft.
+   signals, and (once available) the draft — plus, once `ready_for_review`,
+   a **"Request approval to send"** button (only if a `prospect_email` was
+   given at intake).
 8. If you refresh the page or click away and back, nothing is lost — step
    4 just re-opens with whatever the DB currently has, because `GET
    /runs/{id}` and the SSE stream both read from the same `runs` row that's
    being updated live. **The database is the single source of truth**; the
    frontend never holds state the backend doesn't also have.
+9. **Clicking "Request approval"** (`requestApproval()` in `app.js`) posts to
+   `POST /runs/{id}/request-approval`, which flips status to
+   `pending_approval` — only reachable from `ready_for_review`, and only if
+   a `prospect_email` is on file (see §3b for what happens from here).
 
 ## 3. Authentication system
 
 **Why it exists**: added on request, not part of the original case-study
-scope (documented in README.md as a deliberate scope cut). It's intentionally
-minimal — a single-operator demo tool, not a hardened multi-tenant system.
+scope — the case study's own bar was just "produces a draft ready for human
+review," no accounts required. It's intentionally minimal (no password reset
+flow, no rate limiting) — the bar is "don't store plaintext passwords and
+do scope each account's data correctly," not "survive a security audit."
 
 **Data model** (`db.py`):
 ```sql
@@ -100,6 +116,56 @@ framework. `auth.js`'s `submitAuth()` POSTs to `/auth/login` or
 `/`. `app.js`'s `loadRuns()` also checks for a `401` response and
 redirects to `/login` — a defensive second layer, in case a session
 expires mid-use.
+
+**Admin access is a separate, configurable check on top of plain auth**:
+`auth.admin_dashboard_restricted()` reads `ADMIN_DASHBOARD_ACCESS` from the
+environment (`"everyone"` by default, or `"admin_only"`), and
+`require_admin_dashboard()` only consults the `ADMIN_EMAILS` allowlist when
+that flag says to. This went through a real design iteration: it started as
+a hard-coded `ADMIN_EMAILS`-only allowlist (`require_admin`), got removed
+entirely when that account's password was forgotten, then came back as this
+toggle so either mode is available without touching code — default open,
+restrictable with one `.env` line.
+
+## 3b. Admin approval & send workflow
+
+**Why it exists**: added on request, extending "draft, never send" into
+"draft, then two separate humans must explicitly agree before it sends."
+Not part of the original case-study scope — the case study's bar was
+"produces a draft ready for human review," full stop.
+
+**The request side** (`POST /runs/{id}/request-approval` in `main.py`):
+requires the run to be `ready_for_review` *and* to have a `prospect_email`
+on file (added to `NewRunRequest` and the `runs` table alongside the
+original `prospect_name`) — there's nothing to send to otherwise. Flips
+status to `pending_approval`.
+
+**The shared queue** (`db.list_admin_queue()`): deliberately **not** scoped
+by `user_id` — it's a JOIN across `runs` and `users` returning every run
+with status in `(pending_approval, sent, rejected, send_failed)`, newest
+first, with the requester's email attached as `requested_by`. This is what
+makes it a *shared* review queue rather than personal history: anyone with
+admin access sees every account's requests, not just their own.
+
+**Approve** (`POST /admin/runs/{id}/approve`): calls
+`email_sender.send_email()` via `asyncio.to_thread()` (since `smtplib` is
+blocking I/O — running it directly in the async route would stall the whole
+event loop for every other request during the SMTP round-trip). Success →
+`status = "sent"`. Failure (bad credentials, SMTP error, etc.) → the
+exception text is stored in `send_error` and `status = "send_failed"`,
+surfaced in the UI rather than silently disappearing.
+
+**Reject** (`POST /admin/runs/{id}/reject`): requires a non-empty `reason`
+in the request body (`RejectRequest` in `models.py`) — enforced both
+client-side (the Reject button alerts if the textarea is empty) and
+server-side (`400` if `reason.strip()` is empty), since a rejection with no
+explanation defeats the point of having a reviewer at all.
+
+**The stats row** (`admin.js`'s `renderStats()`): computed entirely
+client-side from whatever `GET /admin/queue` already returned — no separate
+counting endpoint. Counts `pending_approval`/`sent`/`rejected`/`send_failed`
+out of the same array that renders the list, so the numbers and the rows
+they describe can never drift out of sync with each other.
 
 ## 4. The pipeline, stage by stage (`pipeline.py`)
 
@@ -166,8 +232,15 @@ This is the single decision point that implements 3 of the 4 edge cases
 them individually.
 
 **Stage 4 — Draft (`gemini.draft_message`)**: only reached if confidence was
-`strong`. Takes the one chosen signal and writes a short email, returning
-`{subject, body, cited_signal_ids}`.
+`strong`. Takes the one chosen signal and writes a complete email, returning
+`{subject, body, cited_signal_ids}` — the prompt requires an explicit 3-part
+structure (greeting with the prospect's first name only, a 3-5 sentence body
+paragraph, a mandatory "Best regards, / Team Zamp" sign-off), each part on
+its own line with real blank lines between them. This needed a second pass:
+the first version of the prompt produced a greeting but ran it into the body
+paragraph with no line break and dropped the sign-off entirely — the current
+wording explicitly numbers the 3 parts and says the sign-off "must always be
+the last two lines" to make it actually reliable across repeated calls.
 
 **Stage 5 — Guardrail (`gemini.check_grounding`)**: a *second, independent*
 Gemini call — it never sees the judgment reasoning, only the draft's body
@@ -178,8 +251,13 @@ and checks each one against the source text, returning
 db.set_status(run_id, "ready_for_review" if grounding["all_supported"] else "flagged_ungrounded")
 ```
 This is the 4th edge case, and the one that's actually fired in practice —
-we saw it catch a real hallucination ("headcount more than doubling" from a
-source that only said "job postings up 108%").
+twice, independently, on two different kinds of mistakes: once a numeric
+conflation ("headcount more than doubling" from a source that only said "job
+postings up 108%"), and once an entity mix-up (research for "Apex Labs"
+pulled a signal actually describing the unrelated "Apex Systems," and the
+draft attributed that company's statistic to the wrong one — the guardrail
+caught it the same way, by strictly checking whether the source text
+supports the claim, without needing to understand *why* it didn't).
 
 **Error handling**: the whole thing is wrapped in one `try/except` that sets
 `status = "error"` on any uncaught exception, so a run never gets stuck in
@@ -224,12 +302,19 @@ force one.
 
 | Column | Written by | Read by |
 |---|---|---|
+| `user_id` | `create_run()`, from the authenticated requester | `get_run`/`list_runs` scoping — never null-checked against in the admin queue, which is intentionally unscoped |
+| `prospect_email` | intake form | `request-approval` (requires it present), `email_sender.send_email()`'s `to_email` |
 | `stages` | `db.start_stage`/`finish_stage` after every pipeline step | live view's expandable stage rows |
 | `signals` | after research, again after dedup | "Signals retrieved" section + judgment input |
 | `chosen_hook` | after judgment | shows which signal was picked and why |
-| `draft_subject`/`draft_body` | after draft | the draft box |
+| `draft_subject`/`draft_body` | after draft | the draft box, and the actual email sent verbatim on approval |
 | `confidence` | after judgment | dashboard badge, routing decision |
 | `grounding_result` | after guardrail | per-claim ✅/⚠️ breakdown |
+| `send_error` | `admin_approve_and_send()`, only on SMTP failure | admin preview pane's "Send failed: ..." message |
+| `rejection_reason` | `admin_reject()`, required non-empty | admin preview pane's "Rejected: ..." message |
+
+Two more tables exist alongside `runs`: `users` (`id`, `email`, `password_hash`,
+`created_at`) and `sessions` (`token`, `user_id`, `created_at`) — see §3.
 
 Every column that isn't a plain string is stored as a JSON **string**
 (`json.dumps`) and parsed back into Python/JS objects on read
@@ -278,3 +363,21 @@ rows.
   this is what makes grounding checkable at all. Without a stable
   per-signal handle, "does this claim trace back to a real source" would
   have no mechanism to verify against.
+- **Why sending requires two separate human actions, not one**: the
+  requester clicking "request approval" is not the same action as an admin
+  clicking "approve & send" — intentionally. A single-click send conflates
+  "I think this is good" with "I'm authorizing this to leave the building,"
+  which is exactly the kind of collapsed responsibility that lets a bad
+  email slip out because everyone assumed someone else was checking.
+- **Why reject requires a typed reason, not just a click**: a bare rejection
+  with no reason is a dead end for the requester — they can't learn from it
+  or know whether to try a different hook. Enforcing a reason (client- and
+  server-side) turns every rejection into feedback instead of a silent no.
+- **Why admin access defaults to "everyone logged in" rather than an
+  allowlist**: this flipped twice during the build — allowlist first, then
+  opened to everyone after the allowlisted account's password was
+  forgotten, then made configurable (`ADMIN_DASHBOARD_ACCESS`) so either
+  posture is available without a code change. The default favors not
+  getting locked out of your own demo over strict least-privilege, which is
+  the right tradeoff for a single small team, not necessarily for a larger
+  one.
